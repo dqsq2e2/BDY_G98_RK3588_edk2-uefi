@@ -335,8 +335,7 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&pcie2_0_rst>;
 	supports-clkreq;
-	/* Some board revisions wire PERST# to GPIO4_PB4 instead of GPIO1_PB4 */
-	reset-gpios = <&gpio4 RK_PB4 GPIO_ACTIVE_HIGH>;
+	reset-gpios = <&gpio1 RK_PB4 GPIO_ACTIVE_HIGH>;
 	vpcie3v3-supply = <&vcc3v3_nvme>;
 	status = "okay";
 
@@ -422,7 +421,7 @@
 
 	pcie {
 		pcie2_0_rst: pcie2-0-rst {
-			rockchip,pins = <4 RK_PB4 RK_FUNC_GPIO &pcfg_pull_none>;
+			rockchip,pins = <1 RK_PB4 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 
 		pcie2_1_rst: pcie2-1-rst {
@@ -540,11 +539,7 @@
 	status = "okay";
 };
 
-/* uart7m2 (feba0000) muxes to GPIO1_PB4/PB5. Historically pcie2_0_rst
- * was on GPIO1_PB4 and uart7 probing would steal the pinctrl, taking
- * the first 2.5G NIC down. Keep uart7 disabled: some board revisions
- * still use that pinout.
- */
+/* uart7m2 shares GPIO1_PB4 with the first RTL8125 PERST#. */
 &uart7 {
 	status = "disabled";
 };
