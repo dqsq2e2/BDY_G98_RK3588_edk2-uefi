@@ -1,21 +1,22 @@
 /** @file
 *
-*  Phoenix RK3588 Platform Library
+*  BDY G98 RK3588 Platform Library
 *
 *  Board-specific GPIO, PMIC, PCIe, USB, and GMAC configuration.
 *
 *  Hardware summary:
 *    - Dual NVMe via PCIe 3.0 NANBNB (pcie3x4 = 2 lanes, pcie3x2 = 2 lanes)
 *    - Dual GMAC with fixed-link to YT9215S DSA switches
-*    - USB 2.0 host only (EHCI/OHCI)
+*    - Two USB 3.0 host ports (XHCI with EHCI/OHCI companions)
 *    - SPI NOR flash on fspim0
-*    - Headless (no HDMI/DP)
 *
-*  GPIO map (from Phoenix DTS):
-*    PCIe 3.0 power enable:  GPIO2_PB6
+*  GPIO map (from BDY G98 DTS):
+*    PCIe 3.0 power enable:  GPIO3_PD5 (shared NVMe supply)
 *    PCIe 3x4 reset:         GPIO4_PB6
 *    PCIe 3x2 reset:         GPIO3_PD4
-*    USB host power:          GPIO3_PD5
+*    NVMe power:              GPIO3_PD5
+*    USB host power:          GPIO4_PB0
+*    USB OTG power:           GPIO4_PA7
 *    GMAC0 PHY reset:         GPIO3_PD0
 *    GMAC1 PHY reset:         GPIO4_PB3
 *
@@ -161,8 +162,9 @@ GmacIomux (
     case 0:
       /* GMAC0 RGMII iomux */
       BUS_IOC->GPIO4A_IOMUX_SEL_L = (0xFFFFUL << 16) | (0x1111);
-      BUS_IOC->GPIO4A_IOMUX_SEL_H = (0xFFFFUL << 16) | (0x1111);
-      BUS_IOC->GPIO4B_IOMUX_SEL_L = (0x0FFFUL << 16) | (0x0111);
+      /* GPIO4_PA7 and GPIO4_PB0 supply USB VBUS; leave their muxes alone. */
+      BUS_IOC->GPIO4A_IOMUX_SEL_H = (0x0FFFUL << 16) | (0x0111);
+      BUS_IOC->GPIO4B_IOMUX_SEL_L = (0x0FF0UL << 16) | (0x0110);
       BUS_IOC->GPIO2B_IOMUX_SEL_H = (0x0FF0UL << 16) | (0x0110);
       BUS_IOC->GPIO2C_IOMUX_SEL_L = (0xFFFFUL << 16) | (0x1111);
 
@@ -241,14 +243,19 @@ UsbPortPowerEnable (
   VOID
   )
 {
-  DEBUG ((DEBUG_INFO, "Phoenix: UsbPortPowerEnable\n"));
+  DEBUG ((DEBUG_INFO, "BDY G98: UsbPortPowerEnable\n"));
 
-  /*
-   * USB host power: GPIO3_PD5 (vcc5v0_host)
-   * From Phoenix DTS: enable-active-high, gpio = <&gpio3 RK_PD5>
-   */
-  GpioPinWrite (3, GPIO_PIN_PD5, TRUE);
-  GpioPinSetDirection (3, GPIO_PIN_PD5, GPIO_PIN_OUTPUT);
+  /* The host and OTG ports have separate active-high 5 V VBUS switches. */
+  GpioPinSetFunction (4, GPIO_PIN_PB0, 0);
+  GpioPinWrite (4, GPIO_PIN_PB0, TRUE);
+  GpioPinSetDirection (4, GPIO_PIN_PB0, GPIO_PIN_OUTPUT);
+
+  GpioPinSetFunction (4, GPIO_PIN_PA7, 0);
+  GpioPinWrite (4, GPIO_PIN_PA7, TRUE);
+  GpioPinSetDirection (4, GPIO_PIN_PA7, GPIO_PIN_OUTPUT);
+
+  /* Let VBUS settle before UsbHcdInitDxe exposes the host controllers. */
+  MicroSecondDelay (100000);
 }
 
 VOID
@@ -272,22 +279,27 @@ PcieIoInit (
   UINT32  Segment
   )
 {
+  if ((Segment == PCIE_SEGMENT_PCIE30X4) || (Segment == PCIE_SEGMENT_PCIE30X2)) {
+    /* NVMe supply belongs to PCIe initialization, not the USB power hook. */
+    GpioPinSetFunction (3, GPIO_PIN_PD5, 0);
+    GpioPinSetDirection (3, GPIO_PIN_PD5, GPIO_PIN_OUTPUT);
+  }
+
   switch (Segment) {
     case PCIE_SEGMENT_PCIE30X4:
       /*
        * PCIe 3x4 (used as 2-lane in NANBNB mode)
        * Reset: GPIO4_PB6
-       * Power: GPIO2_PB6 (vcc3v3_pcie30, shared with 3x2)
+       * Power: GPIO3_PD5 (vcc3v3_nvme, shared with 3x2)
        */
       GpioPinSetDirection (4, GPIO_PIN_PB6, GPIO_PIN_OUTPUT);
-      GpioPinSetDirection (2, GPIO_PIN_PB6, GPIO_PIN_OUTPUT);
       break;
 
     case PCIE_SEGMENT_PCIE30X2:
       /*
        * PCIe 3x2 (used as 2-lane in NANBNB mode)
        * Reset: GPIO3_PD4
-       * Power: shared vcc3v3_pcie30
+       * Power: shared vcc3v3_nvme
        */
       GpioPinSetDirection (3, GPIO_PIN_PD4, GPIO_PIN_OUTPUT);
       break;
@@ -306,12 +318,9 @@ PciePowerEn (
 {
   switch (Segment) {
     case PCIE_SEGMENT_PCIE30X4:
-      /* vcc3v3_pcie30: GPIO2_PB6, active high */
-      GpioPinWrite (2, GPIO_PIN_PB6, Enable);
-      break;
-
     case PCIE_SEGMENT_PCIE30X2:
-      /* Shares the same vcc3v3_pcie30 regulator, already enabled by 3x4 */
+      /* Both NVMe slots share this active-high regulator. */
+      GpioPinWrite (3, GPIO_PIN_PD5, Enable);
       break;
 
     default:
