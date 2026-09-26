@@ -304,6 +304,20 @@ PcieIoInit (
       GpioPinSetDirection (3, GPIO_PIN_PD4, GPIO_PIN_OUTPUT);
       break;
 
+    case PCIE_SEGMENT_PCIE20L0:
+      /* RTL8125 on fe170000: keep PERST# asserted until link training. */
+      GpioPinSetFunction (4, GPIO_PIN_PB4, 0);
+      GpioPinWrite (4, GPIO_PIN_PB4, FALSE);
+      GpioPinSetDirection (4, GPIO_PIN_PB4, GPIO_PIN_OUTPUT);
+      break;
+
+    case PCIE_SEGMENT_PCIE20L1:
+      /* RTL8125 on fe180000. */
+      GpioPinSetFunction (4, GPIO_PIN_PA2, 0);
+      GpioPinWrite (4, GPIO_PIN_PA2, FALSE);
+      GpioPinSetDirection (4, GPIO_PIN_PA2, GPIO_PIN_OUTPUT);
+      break;
+
     default:
       break;
   }
@@ -344,6 +358,14 @@ PciePeReset (
     case PCIE_SEGMENT_PCIE30X2:
       /* Reset: GPIO3_PD4 */
       GpioPinWrite (3, GPIO_PIN_PD4, !Enable);
+      break;
+
+    case PCIE_SEGMENT_PCIE20L0:
+      GpioPinWrite (4, GPIO_PIN_PB4, !Enable);
+      break;
+
+    case PCIE_SEGMENT_PCIE20L1:
+      GpioPinWrite (4, GPIO_PIN_PA2, !Enable);
       break;
 
     default:
